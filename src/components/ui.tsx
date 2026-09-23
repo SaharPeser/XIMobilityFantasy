@@ -1,3 +1,4 @@
+import { Minus, Plus } from "lucide-react";
 import type { ReactNode } from "react";
 
 export function Card({
@@ -112,24 +113,51 @@ export function NumberInput({
   onChange,
   disabled,
   ariaLabel,
+  min = 0,
+  max = 30,
 }: {
   value: number;
   onChange: (v: number) => void;
   disabled?: boolean;
   ariaLabel?: string;
+  min?: number;
+  max?: number;
 }) {
+  const clamp = (v: number) => Math.max(min, Math.min(max, v));
+  const safeValue = Number.isFinite(value) ? value : 0;
+
   return (
-    <input
-      type="number"
-      inputMode="numeric"
-      min={0}
-      max={30}
-      aria-label={ariaLabel}
-      value={Number.isFinite(value) ? value : 0}
-      disabled={disabled}
-      onChange={(e) => onChange(Math.max(0, Math.min(30, Number(e.target.value))))}
-      className="h-11 w-14 rounded-lg border border-slate-border bg-slate-900/70 text-center text-lg font-bold text-slate-50 outline-none focus:border-sand disabled:opacity-50"
-    />
+    <div className="flex items-center gap-1">
+      <button
+        type="button"
+        aria-label={`${ariaLabel ?? "ערך"} הפחת`}
+        disabled={disabled || safeValue <= min}
+        onClick={() => onChange(clamp(safeValue - 1))}
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-slate-border bg-slate-800/80 text-slate-300 transition active:scale-90 disabled:cursor-not-allowed disabled:opacity-30"
+      >
+        <Minus size={16} />
+      </button>
+      <input
+        type="number"
+        inputMode="numeric"
+        min={min}
+        max={max}
+        aria-label={ariaLabel}
+        value={safeValue}
+        disabled={disabled}
+        onChange={(e) => onChange(clamp(Number(e.target.value)))}
+        className="h-11 w-12 rounded-lg border border-slate-border bg-slate-900/70 text-center text-lg font-bold text-slate-50 outline-none focus:border-sand disabled:opacity-50"
+      />
+      <button
+        type="button"
+        aria-label={`${ariaLabel ?? "ערך"} הוסף`}
+        disabled={disabled || safeValue >= max}
+        onClick={() => onChange(clamp(safeValue + 1))}
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-slate-border bg-slate-800/80 text-slate-300 transition active:scale-90 disabled:cursor-not-allowed disabled:opacity-30"
+      >
+        <Plus size={16} />
+      </button>
+    </div>
   );
 }
 

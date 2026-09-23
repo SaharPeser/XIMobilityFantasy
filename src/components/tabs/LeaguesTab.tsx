@@ -81,9 +81,9 @@ export function LeaguesTab() {
     setNewLeagueName("");
   };
 
-  const handleJoin = () => {
+  const handleJoin = async () => {
     if (!joinCode.trim()) return;
-    const ok = joinLeague(joinCode.trim());
+    const ok = await joinLeague(joinCode.trim());
     setJoinError(!ok);
     if (ok) setJoinCode("");
   };

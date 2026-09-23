@@ -7,6 +7,7 @@ import {
   useEffect,
   useMemo,
   useReducer,
+  useState,
 } from "react";
 import type {
   AppState,
@@ -20,8 +21,13 @@ import type {
 } from "@/lib/types";
 import { buildInitialState } from "@/lib/mockData";
 import { generateInviteCode } from "@/lib/scoring";
+import { isSupabaseConfigured } from "@/lib/supabaseClient";
+import * as repo from "@/lib/supabaseRepo";
+import { readCachedDisplayName, writeCachedDisplayName } from "@/lib/displayNameCache";
 
 const STORAGE_KEY = "futevolei-state-v2";
+
+export type DataSource = "mock" | "supabase";
 
 type Action =
   | { type: "SET_CURRENT_USER"; userId: string }
@@ -57,6 +63,10 @@ function simulateMatchResult(): MatchResult {
   return { set, mvpPlayerId: "" };
 }
 
+// Pure AppState transitions. Used both to drive the local-only mock reducer
+// and, in Supabase mode, to apply an optimistic local update immediately
+// (before/alongside the real async write via src/lib/supabaseRepo.ts) so the
+// UI never has to wait on a round trip for its own actions.
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
     case "SET_CURRENT_USER":
@@ -188,22 +198,29 @@ interface AppContextValue {
   state: AppState;
   dispatch: React.Dispatch<Action>;
   currentUser: AppState["users"][number];
+  dataSource: DataSource;
+  loading: boolean;
+  needsDisplayName: boolean;
+  updateDisplayName: (name: string) => void;
   submitPrediction: (matchId: string, winnerTeamId: string, set: SetScore) => void;
   submitDream4: (round: number, playerIds: string[], captainId: string) => void;
   submitTablePrediction: (order: string[]) => void;
   createLeague: (name: string) => void;
-  joinLeague: (code: string) => boolean;
+  joinLeague: (code: string) => Promise<boolean>;
   setCurrentUser: (userId: string) => void;
   adminSetResult: (matchId: string, result: MatchResult) => void;
   adminResetResult: (matchId: string) => void;
   adminSimulateRound: (round: number) => void;
   resetAll: () => void;
+  refetchAll: () => void;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, undefined, () => {
+  // The local demo path — always initialized so it's instantly ready as a
+  // fallback, and remains the whole app when Supabase isn't configured.
+  const [mockState, dispatch] = useReducer(reducer, undefined, () => {
     if (typeof window !== "undefined") {
       try {
         const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -217,11 +234,68 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(mockState));
     } catch {
       // ignore quota errors
     }
-  }, [state]);
+  }, [mockState]);
+
+  // The real backend path.
+  const [dataSource, setDataSource] = useState<DataSource>("mock");
+  const [loading, setLoading] = useState(isSupabaseConfigured);
+  const [supaState, setSupaState] = useState<AppState | null>(null);
+  // Set while a Supabase session exists but its profile has no display name
+  // yet — gates the app behind the name-entry modal (see AppShell.tsx).
+  const [pendingUserId, setPendingUserId] = useState<string | null>(null);
+
+  const loadSupabaseState = useCallback(async (userId: string) => {
+    const fresh = await repo.fetchAppState(userId);
+    setSupaState(fresh);
+    setDataSource("supabase");
+    setPendingUserId(null);
+  }, []);
+
+  useEffect(() => {
+    // `loading` already starts false in this case (see useState above).
+    if (!isSupabaseConfigured) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const userId = await repo.ensureSession();
+        const dbName = await repo.ensureProfile(userId);
+        const cachedName = readCachedDisplayName(userId);
+
+        if (!dbName && cachedName) {
+          // We have a name locally (e.g. an earlier write failed) — resync
+          // it to the profile instead of asking again.
+          await repo.updateDisplayName(userId, cachedName).catch(() => {});
+        } else if (!dbName && !cachedName) {
+          // First visit: ask for a name before entering the app.
+          if (!cancelled) {
+            setPendingUserId(userId);
+            setLoading(false);
+          }
+          return;
+        }
+
+        if (cancelled) return;
+        await loadSupabaseState(userId);
+      } catch (err) {
+        // Requirement: fall back to local mock data if Supabase env vars are
+        // missing or the connection/anonymous-auth handshake fails (e.g.
+        // Anonymous Sign-ins not enabled on the project yet).
+        console.warn("[futevolei] Supabase unavailable, using local demo data instead.", err);
+        if (!cancelled) setDataSource("mock");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadSupabaseState]);
+
+  const state = dataSource === "supabase" && supaState ? supaState : mockState;
 
   const currentUser = useMemo(
     () =>
@@ -229,48 +303,119 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [state.users, state.currentUserId]
   );
 
+  const applyLocally = useCallback(
+    (action: Action) => {
+      if (dataSource === "supabase") {
+        setSupaState((prev) => (prev ? reducer(prev, action) : prev));
+      } else {
+        dispatch(action);
+      }
+    },
+    [dataSource]
+  );
+
   const submitPrediction = useCallback(
     (matchId: string, winnerTeamId: string, set: SetScore) => {
-      dispatch({
-        type: "SUBMIT_PREDICTION",
-        userId: state.currentUserId,
-        matchId,
-        winnerTeamId,
-        set,
-      });
+      const userId = state.currentUserId;
+      applyLocally({ type: "SUBMIT_PREDICTION", userId, matchId, winnerTeamId, set });
+      if (dataSource === "supabase") {
+        repo.submitPrediction(userId, matchId, winnerTeamId, set).catch((err) => {
+          console.error("[futevolei] Failed to save prediction to Supabase", err);
+        });
+      }
     },
-    [state.currentUserId]
+    [applyLocally, dataSource, state.currentUserId]
   );
 
   const submitDream4 = useCallback(
     (round: number, playerIds: string[], captainId: string) => {
-      dispatch({
-        type: "SUBMIT_DREAM4",
-        userId: state.currentUserId,
-        round,
-        playerIds,
-        captainId,
-      });
+      const userId = state.currentUserId;
+      applyLocally({ type: "SUBMIT_DREAM4", userId, round, playerIds, captainId });
+      if (dataSource === "supabase") {
+        repo.submitDream4(userId, round, playerIds, captainId).catch((err) => {
+          console.error("[futevolei] Failed to save fantasy pick to Supabase", err);
+        });
+      }
     },
-    [state.currentUserId]
+    [applyLocally, dataSource, state.currentUserId]
   );
 
   const submitTablePrediction = useCallback(
     (order: string[]) => {
-      dispatch({ type: "SUBMIT_TABLE_PREDICTION", userId: state.currentUserId, order });
+      const userId = state.currentUserId;
+      applyLocally({ type: "SUBMIT_TABLE_PREDICTION", userId, order });
+      if (dataSource === "supabase") {
+        repo.submitTablePrediction(userId, order).catch((err) => {
+          console.error("[futevolei] Failed to save table prediction to Supabase", err);
+        });
+      }
     },
-    [state.currentUserId]
+    [applyLocally, dataSource, state.currentUserId]
+  );
+
+  const updateDisplayName = useCallback(
+    (name: string) => {
+      if (pendingUserId) {
+        // First-visit onboarding: save the name, then load the rest of the app.
+        const userId = pendingUserId;
+        writeCachedDisplayName(userId, name);
+        setLoading(true);
+        repo
+          .updateDisplayName(userId, name)
+          .catch((err) => console.error("[futevolei] Failed to save display name", err))
+          .then(() => loadSupabaseState(userId))
+          .catch((err) => {
+            console.error("[futevolei] Failed to load app data after onboarding", err);
+            setDataSource("mock");
+          })
+          .finally(() => setLoading(false));
+        return;
+      }
+
+      if (dataSource === "supabase") {
+        const userId = state.currentUserId;
+        writeCachedDisplayName(userId, name);
+        setSupaState((prev) =>
+          prev
+            ? {
+                ...prev,
+                users: prev.users.map((u) => (u.id === userId ? { ...u, name } : u)),
+              }
+            : prev
+        );
+        repo.updateDisplayName(userId, name).catch((err) => {
+          console.error("[futevolei] Failed to save display name to Supabase", err);
+        });
+      }
+    },
+    [dataSource, loadSupabaseState, pendingUserId, state.currentUserId]
   );
 
   const createLeague = useCallback(
     (name: string) => {
+      if (dataSource === "supabase") {
+        repo
+          .createLeague(name, state.currentUserId)
+          .then(() => repo.fetchLeagues())
+          .then((leagues) => setSupaState((prev) => (prev ? { ...prev, leagues } : prev)))
+          .catch((err) => console.error("[futevolei] Failed to create league", err));
+        return;
+      }
       dispatch({ type: "CREATE_LEAGUE", name, ownerId: state.currentUserId });
     },
-    [state.currentUserId]
+    [dataSource, state.currentUserId]
   );
 
   const joinLeague = useCallback(
-    (code: string) => {
+    async (code: string) => {
+      if (dataSource === "supabase") {
+        const ok = await repo.joinLeagueByCode(code);
+        if (ok) {
+          const leagues = await repo.fetchLeagues();
+          setSupaState((prev) => (prev ? { ...prev, leagues } : prev));
+        }
+        return ok;
+      }
       const exists = state.leagues.some(
         (l) => l.code.toUpperCase() === code.toUpperCase()
       );
@@ -279,33 +424,89 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
       return exists;
     },
-    [state.currentUserId, state.leagues]
+    [dataSource, state.currentUserId, state.leagues]
   );
 
-  const setCurrentUser = useCallback((userId: string) => {
-    dispatch({ type: "SET_CURRENT_USER", userId });
-  }, []);
+  const setCurrentUser = useCallback(
+    (userId: string) => {
+      // Only meaningful in mock mode: Supabase mode has exactly one real,
+      // signed-in identity (see repo.ensureSession), so there's no one else
+      // to switch to.
+      if (dataSource === "mock") dispatch({ type: "SET_CURRENT_USER", userId });
+    },
+    [dataSource]
+  );
 
-  const adminSetResult = useCallback((matchId: string, result: MatchResult) => {
-    dispatch({ type: "ADMIN_SET_RESULT", matchId, result });
-  }, []);
+  const adminSetResult = useCallback(
+    (matchId: string, result: MatchResult) => {
+      if (dataSource === "supabase") {
+        repo
+          .adminSetResult(matchId, result)
+          .then(() => repo.fetchMatches())
+          .then((matches) => setSupaState((prev) => (prev ? { ...prev, matches } : prev)))
+          .catch((err) => console.error("[futevolei] Failed to save match result", err));
+        return;
+      }
+      dispatch({ type: "ADMIN_SET_RESULT", matchId, result });
+    },
+    [dataSource]
+  );
 
-  const adminResetResult = useCallback((matchId: string) => {
-    dispatch({ type: "ADMIN_RESET_RESULT", matchId });
-  }, []);
+  const adminResetResult = useCallback(
+    (matchId: string) => {
+      if (dataSource === "supabase") {
+        repo
+          .adminResetResult(matchId)
+          .then(() => repo.fetchMatches())
+          .then((matches) => setSupaState((prev) => (prev ? { ...prev, matches } : prev)))
+          .catch((err) => console.error("[futevolei] Failed to reset match result", err));
+        return;
+      }
+      dispatch({ type: "ADMIN_RESET_RESULT", matchId });
+    },
+    [dataSource]
+  );
 
-  const adminSimulateRound = useCallback((round: number) => {
-    dispatch({ type: "ADMIN_SIMULATE_ROUND", round });
-  }, []);
+  const adminSimulateRound = useCallback(
+    (round: number) => {
+      if (dataSource === "supabase") {
+        repo
+          .adminSimulateRound(round)
+          .then(() => repo.fetchMatches())
+          .then((matches) => setSupaState((prev) => (prev ? { ...prev, matches } : prev)))
+          .catch((err) => console.error("[futevolei] Failed to simulate round", err));
+        return;
+      }
+      dispatch({ type: "ADMIN_SIMULATE_ROUND", round });
+    },
+    [dataSource]
+  );
 
   const resetAll = useCallback(() => {
+    // No destructive "factory reset" against a shared production database —
+    // this only ever clears the local mock sandbox.
+    if (dataSource === "supabase") return;
     dispatch({ type: "RESET_ALL" });
-  }, []);
+  }, [dataSource]);
+
+  const refetchAll = useCallback(() => {
+    if (dataSource !== "supabase") return;
+    setLoading(true);
+    repo
+      .fetchAppState(state.currentUserId)
+      .then((fresh) => setSupaState(fresh))
+      .catch((err) => console.error("[futevolei] Failed to refresh from Supabase", err))
+      .finally(() => setLoading(false));
+  }, [dataSource, state.currentUserId]);
 
   const value: AppContextValue = {
     state,
     dispatch,
     currentUser,
+    dataSource,
+    loading,
+    needsDisplayName: pendingUserId !== null,
+    updateDisplayName,
     submitPrediction,
     submitDream4,
     submitTablePrediction,
@@ -316,6 +517,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     adminResetResult,
     adminSimulateRound,
     resetAll,
+    refetchAll,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

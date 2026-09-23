@@ -1,30 +1,33 @@
 "use client";
 
-import { BarChart3, ShieldAlert, Table2, Target, Trophy, Users2 } from "lucide-react";
+import { ShieldAlert, Table2, Target, Trophy, Users2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-export type TabId = "predictions" | "dream4" | "table" | "leagues" | "leaderboard" | "admin";
+export type TabId = "predictions" | "dream4" | "leagues" | "table" | "admin";
 
-const TABS: { id: TabId; label: string; icon: LucideIcon }[] = [
+const TABS: { id: TabId; label: string; icon: LucideIcon; adminOnly?: boolean }[] = [
   { id: "predictions", label: "הימורים", icon: Target },
   { id: "dream4", label: "הרביעייה שלי", icon: Users2 },
-  { id: "table", label: "טבלת העונה", icon: Table2 },
   { id: "leagues", label: "הליגות שלי", icon: Trophy },
-  { id: "leaderboard", label: "טבלת מובילים", icon: BarChart3 },
-  { id: "admin", label: "ניהול", icon: ShieldAlert },
+  { id: "table", label: "טבלה", icon: Table2 },
+  { id: "admin", label: "ניהול", icon: ShieldAlert, adminOnly: true },
 ];
 
 export function TabBar({
   active,
   onChange,
+  isAdmin,
 }: {
   active: TabId;
   onChange: (id: TabId) => void;
+  isAdmin: boolean;
 }) {
+  const visibleTabs = TABS.filter((t) => !t.adminOnly || isAdmin);
+
   return (
-    <nav className="sticky bottom-0 z-20 border-t border-slate-border bg-slate-dark/95 backdrop-blur-md">
+    <nav className="sticky bottom-0 z-20 border-t border-slate-border bg-slate-dark/95 backdrop-blur-md [padding-bottom:env(safe-area-inset-bottom)]">
       <div className="mx-auto flex max-w-5xl justify-between px-1">
-        {TABS.map(({ id, label, icon: Icon }) => {
+        {visibleTabs.map(({ id, label, icon: Icon }) => {
           const isActive = active === id;
           return (
             <button

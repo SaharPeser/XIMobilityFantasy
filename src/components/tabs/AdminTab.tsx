@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Dice5, RotateCcw, ShieldAlert, Trash2 } from "lucide-react";
+import { Dice5, RefreshCw, RotateCcw, ShieldAlert, Trash2 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import type { Match, SetScore } from "@/lib/types";
 import { REGULAR_SEASON_ROUNDS } from "@/lib/types";
@@ -68,7 +68,7 @@ function AdminMatchForm({ match }: { match: Match }) {
 }
 
 export function AdminTab() {
-  const { state, adminSimulateRound, resetAll } = useApp();
+  const { state, currentUser, adminSimulateRound, resetAll, refetchAll, dataSource } = useApp();
 
   const rounds = useMemo(
     () => Array.from(new Set(state.matches.map((m) => m.round))).sort((a, b) => a - b),
@@ -78,6 +78,15 @@ export function AdminTab() {
   const [confirmReset, setConfirmReset] = useState(false);
 
   const matches = state.matches.filter((m) => m.round === activeRound);
+
+  if (!currentUser.isAdmin) {
+    return (
+      <Card className="p-6 text-center">
+        <ShieldAlert className="mx-auto mb-2 text-rose-400" size={24} />
+        <p className="text-sm text-slate-300">הגישה לפאנל הניהול מוגבלת למנהלי המערכת בלבד</p>
+      </Card>
+    );
+  }
 
   return (
     <div className="animate-fade-in">
@@ -114,32 +123,48 @@ export function AdminTab() {
         ))}
       </div>
 
-      <Card className="mt-6 flex items-center justify-between p-4">
-        <div>
-          <p className="text-sm font-bold text-slate-100">איפוס כל הנתונים</p>
-          <p className="text-xs text-slate-500">מחזיר את כל התוצאות, הניחושים והליגות לברירת המחדל</p>
-        </div>
-        {confirmReset ? (
-          <div className="flex gap-2">
-            <PrimaryButton
-              onClick={() => {
-                resetAll();
-                setConfirmReset(false);
-              }}
-              className="!bg-rose-500 !from-rose-500 !to-rose-500"
-            >
-              אישור איפוס
-            </PrimaryButton>
-            <GhostButton onClick={() => setConfirmReset(false)}>ביטול</GhostButton>
+      {dataSource === "supabase" ? (
+        <Card className="mt-6 flex items-center justify-between p-4">
+          <div>
+            <p className="text-sm font-bold text-slate-100">רענון נתונים מהשרת</p>
+            <p className="text-xs text-slate-500">
+              הנתונים נשמרים ב-Supabase — אין איפוס הרסני, רק סנכרון מחדש מול השרת
+            </p>
           </div>
-        ) : (
-          <GhostButton onClick={() => setConfirmReset(true)}>
+          <GhostButton onClick={refetchAll}>
             <span className="flex items-center gap-1.5">
-              <Trash2 size={14} /> איפוס
+              <RefreshCw size={14} /> רענן
             </span>
           </GhostButton>
-        )}
-      </Card>
+        </Card>
+      ) : (
+        <Card className="mt-6 flex items-center justify-between p-4">
+          <div>
+            <p className="text-sm font-bold text-slate-100">איפוס כל הנתונים</p>
+            <p className="text-xs text-slate-500">מחזיר את כל התוצאות, הניחושים והליגות לברירת המחדל</p>
+          </div>
+          {confirmReset ? (
+            <div className="flex gap-2">
+              <PrimaryButton
+                onClick={() => {
+                  resetAll();
+                  setConfirmReset(false);
+                }}
+                className="!bg-rose-500 !from-rose-500 !to-rose-500"
+              >
+                אישור איפוס
+              </PrimaryButton>
+              <GhostButton onClick={() => setConfirmReset(false)}>ביטול</GhostButton>
+            </div>
+          ) : (
+            <GhostButton onClick={() => setConfirmReset(true)}>
+              <span className="flex items-center gap-1.5">
+                <Trash2 size={14} /> איפוס
+              </span>
+            </GhostButton>
+          )}
+        </Card>
+      )}
     </div>
   );
 }

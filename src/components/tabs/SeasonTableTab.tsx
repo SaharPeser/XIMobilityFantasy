@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import {
+  BarChart3,
   ChevronDown,
   ChevronUp,
   GripVertical,
@@ -9,6 +10,7 @@ import {
   ListOrdered,
   Table2,
 } from "lucide-react";
+import { LeaderboardTab } from "./LeaderboardTab";
 import { useApp } from "@/context/AppContext";
 import {
   computeStandings,
@@ -204,20 +206,20 @@ function TablePredictionEditor() {
 }
 
 export function SeasonTableTab() {
-  const [view, setView] = useState<"live" | "predict">("live");
+  const [view, setView] = useState<"live" | "leaderboard" | "predict">("live");
 
   return (
     <div className="animate-fade-in">
       <SectionTitle
-        title="טבלת העונה"
-        subtitle="טבלת הליגה החיה וניחוש מיקומי הסיום מראש"
+        title="טבלה"
+        subtitle="טבלת הליגה החיה, טבלת מובילים וניחוש מיקומי הסיום מראש"
         icon={<Table2 size={20} />}
       />
 
-      <div className="mb-4 flex gap-2">
+      <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
         <button
           onClick={() => setView("live")}
-          className={`flex flex-1 items-center justify-center gap-1.5 rounded-full px-4 py-2 text-sm font-bold transition ${
+          className={`flex flex-1 shrink-0 items-center justify-center gap-1.5 rounded-full px-3 py-2 text-sm font-bold transition ${
             view === "live"
               ? "bg-gradient-to-l from-ocean to-ocean-light text-slate-900"
               : "bg-slate-800/60 text-slate-300 hover:bg-slate-800"
@@ -226,8 +228,18 @@ export function SeasonTableTab() {
           <Table2 size={14} /> טבלה חיה
         </button>
         <button
+          onClick={() => setView("leaderboard")}
+          className={`flex flex-1 shrink-0 items-center justify-center gap-1.5 rounded-full px-3 py-2 text-sm font-bold transition ${
+            view === "leaderboard"
+              ? "bg-gradient-to-l from-ocean to-ocean-light text-slate-900"
+              : "bg-slate-800/60 text-slate-300 hover:bg-slate-800"
+          }`}
+        >
+          <BarChart3 size={14} /> מובילים
+        </button>
+        <button
           onClick={() => setView("predict")}
-          className={`flex flex-1 items-center justify-center gap-1.5 rounded-full px-4 py-2 text-sm font-bold transition ${
+          className={`flex flex-1 shrink-0 items-center justify-center gap-1.5 rounded-full px-3 py-2 text-sm font-bold transition ${
             view === "predict"
               ? "bg-gradient-to-l from-sand to-sand-light text-slate-900"
               : "bg-slate-800/60 text-slate-300 hover:bg-slate-800"
@@ -237,7 +249,9 @@ export function SeasonTableTab() {
         </button>
       </div>
 
-      {view === "live" ? <LiveStandings /> : <TablePredictionEditor />}
+      {view === "live" && <LiveStandings />}
+      {view === "leaderboard" && <LeaderboardTab />}
+      {view === "predict" && <TablePredictionEditor />}
     </div>
   );
 }

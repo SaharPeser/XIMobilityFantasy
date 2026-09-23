@@ -1,10 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { BarChart3, Medal } from "lucide-react";
+import { Medal } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import { computeLeaderboard, computeRoundLeaderboard } from "@/lib/scoring";
-import { Avatar, Card, SectionTitle } from "../ui";
+import { Avatar, Card } from "../ui";
 
 const MEDAL_COLORS = ["#F59E0B", "#94A3B8", "#B45309"];
 
@@ -25,12 +25,6 @@ export function LeaderboardTab() {
 
   return (
     <div className="animate-fade-in">
-      <SectionTitle
-        title="טבלת מובילים"
-        subtitle="דירוג כלל השחקנים לפי נקודות הימורים ופנטזי"
-        icon={<BarChart3 size={20} />}
-      />
-
       <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
         <button
           onClick={() => setView("global")}
