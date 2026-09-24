@@ -124,7 +124,8 @@ create index players_team_id_idx on public.players (team_id);
 
 create table public.matches (
   id uuid primary key default gen_random_uuid(),
-  round int not null check (round between 1 and 11),
+  -- Named round_number (not round) for consistency with fantasy_picks.round_number.
+  round_number int not null check (round_number between 1 and 11),
   team_a_id uuid not null references public.teams (id),
   team_b_id uuid not null references public.teams (id),
   score_a int check (score_a is null or score_a >= 0),
@@ -134,10 +135,10 @@ create table public.matches (
   lock_time timestamptz not null,
   created_at timestamptz not null default now(),
   constraint matches_teams_distinct check (team_a_id <> team_b_id),
-  constraint matches_round_pair_unique unique (round, team_a_id, team_b_id)
+  constraint matches_round_pair_unique unique (round_number, team_a_id, team_b_id)
 );
 
-create index matches_round_idx on public.matches (round);
+create index matches_round_idx on public.matches (round_number);
 
 create or replace function public.is_round_locked(p_round int)
 returns boolean
@@ -146,7 +147,7 @@ stable
 as $$
   select exists (
     select 1 from public.matches
-    where round = p_round
+    where round_number = p_round
       and (status <> 'scheduled' or now() >= lock_time)
   );
 $$;
@@ -232,7 +233,7 @@ begin
 
   select * into v_match
   from public.matches
-  where round = p_round
+  where round_number = p_round
     and status = 'finished'
     and (team_a_id = v_team_id or team_b_id = v_team_id)
   limit 1;
@@ -285,12 +286,12 @@ with results as (
   select team_a_id as team_id, score_a as points_for, score_b as points_against,
          (score_a > score_b) as won
   from public.matches
-  where status = 'finished' and round <= 11
+  where status = 'finished' and round_number <= 11
   union all
   select team_b_id as team_id, score_b as points_for, score_a as points_against,
          (score_b > score_a) as won
   from public.matches
-  where status = 'finished' and round <= 11
+  where status = 'finished' and round_number <= 11
 ),
 agg as (
   select
@@ -436,7 +437,7 @@ begin
       mvp_id = p_mvp_id,
       status = 'finished'
   where id = p_match_id
-  returning round, team_a_id, team_b_id into v_round, v_team_a, v_team_b;
+  returning round_number, team_a_id, team_b_id into v_round, v_team_a, v_team_b;
 
   if v_round is null then
     raise exception 'Match % not found', p_match_id;
@@ -512,7 +513,7 @@ begin
 
   for m in
     select id, team_a_id, team_b_id from public.matches
-    where round = p_round and status <> 'finished'
+    where round_number = p_round and status <> 'finished'
   loop
     v_winner_score := 18;
     v_loser_score := 2 + floor(random() * 15)::int;
@@ -549,7 +550,7 @@ begin
   update public.matches
   set score_a = null, score_b = null, mvp_id = null, status = 'scheduled'
   where id = p_match_id
-  returning round into v_round;
+  returning round_number into v_round;
 
   if v_round is null then
     raise exception 'Match % not found', p_match_id;
