@@ -503,8 +503,35 @@ export async function updateTeam(
 
 export async function deleteTeam(teamId: string): Promise<void> {
   const client = requireClient();
+
+  // matches.team_a_id/team_b_id have no cascade, so remove this team's
+  // matches first (which cascades their match_predictions) before the team.
+  const { error: matchesError } = await client
+    .from("matches")
+    .delete()
+    .or(`team_a_id.eq.${teamId},team_b_id.eq.${teamId}`);
+  if (matchesError) throw logAndReturn("matches delete (deleteTeam)", matchesError);
+
   const { error } = await client.from("teams").delete().eq("id", teamId);
   if (error) throw logAndReturn("teams delete (deleteTeam)", error);
+}
+
+/** Wipes teams, players, matches, and every prediction/pick that depends on
+ * them — for rebuilding a tournament's roster and schedule from scratch. */
+export async function resetTournamentData(): Promise<void> {
+  const client = requireClient();
+  const tables = [
+    "match_predictions",
+    "fantasy_picks",
+    "season_table_predictions",
+    "matches",
+    "players",
+    "teams",
+  ] as const;
+  for (const table of tables) {
+    const { error } = await client.from(table).delete().not("id", "is", null);
+    if (error) throw logAndReturn(`${table} delete (resetTournamentData)`, error);
+  }
 }
 
 export async function createMatch(round: number, teamAId: string, teamBId: string): Promise<void> {

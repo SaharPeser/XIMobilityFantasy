@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, RotateCcw, Trash2 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import { LEAGUE_SIZE } from "@/lib/types";
 import type { Team } from "@/lib/types";
@@ -138,14 +138,56 @@ function TeamCard({ team }: { team: Team }) {
       {deleteError && <p className="mt-2 text-xs text-rose-400">{deleteError}</p>}
 
       {confirmDelete && (
-        <div className="mt-3 flex items-center gap-2 border-t border-slate-border pt-3">
-          <span className="text-xs text-slate-400">למחוק את הקבוצה?</span>
-          <PrimaryButton onClick={handleDelete} className="!bg-rose-500 !from-rose-500 !to-rose-500">
-            אישור מחיקה
-          </PrimaryButton>
-          <GhostButton onClick={() => setConfirmDelete(false)}>ביטול</GhostButton>
+        <div className="mt-3 border-t border-slate-border pt-3">
+          <p className="mb-2 text-xs text-slate-400">
+            למחוק את הקבוצה? המשחקים והניחושים המשויכים אליה יימחקו גם הם.
+          </p>
+          <div className="flex items-center gap-2">
+            <PrimaryButton onClick={handleDelete} className="!bg-rose-500 !from-rose-500 !to-rose-500">
+              אישור מחיקה
+            </PrimaryButton>
+            <GhostButton onClick={() => setConfirmDelete(false)}>ביטול</GhostButton>
+          </div>
         </div>
       )}
+    </Card>
+  );
+}
+
+function ResetTournamentCard() {
+  const { adminResetTournamentData } = useApp();
+  const [confirm, setConfirm] = useState(false);
+
+  return (
+    <Card className="mb-4 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-bold text-slate-100">התחלת טורניר מאפס</p>
+          <p className="text-xs text-slate-500">
+            מוחק את כל הקבוצות, השחקנים, המשחקים והניחושים — כדי לבנות ליגה חדשה מהתחלה
+          </p>
+        </div>
+        {confirm ? (
+          <div className="flex shrink-0 gap-2">
+            <PrimaryButton
+              onClick={() => {
+                adminResetTournamentData();
+                setConfirm(false);
+              }}
+              className="!bg-rose-500 !from-rose-500 !to-rose-500"
+            >
+              אישור מחיקת הכל
+            </PrimaryButton>
+            <GhostButton onClick={() => setConfirm(false)}>ביטול</GhostButton>
+          </div>
+        ) : (
+          <GhostButton onClick={() => setConfirm(true)} className="shrink-0">
+            <span className="flex items-center gap-1.5">
+              <RotateCcw size={14} /> אפס טורניר
+            </span>
+          </GhostButton>
+        )}
+      </div>
     </Card>
   );
 }
@@ -155,6 +197,7 @@ export function TeamListSection() {
 
   return (
     <div className="mb-4">
+      <ResetTournamentCard />
       <p className="mb-3 text-sm font-bold text-slate-100">
         קבוצות ({state.teams.length} / {LEAGUE_SIZE})
       </p>

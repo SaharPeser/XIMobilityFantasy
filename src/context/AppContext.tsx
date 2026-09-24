@@ -72,6 +72,7 @@ type Action =
       players: { id: string; name: string }[];
     }
   | { type: "ADMIN_DELETE_TEAM"; teamId: string }
+  | { type: "ADMIN_RESET_TOURNAMENT_DATA" }
   | { type: "RESET_ALL" };
 
 function simulateMatchResult(): MatchResult {
@@ -235,10 +236,26 @@ function reducer(state: AppState, action: Action): AppState {
     }
 
     case "ADMIN_DELETE_TEAM": {
+      const removedMatchIds = state.matches
+        .filter((m) => m.teamAId === action.teamId || m.teamBId === action.teamId)
+        .map((m) => m.id);
       const teams = state.teams.filter((t) => t.id !== action.teamId);
       const players = state.players.filter((p) => p.teamId !== action.teamId);
-      return { ...state, teams, players };
+      const matches = state.matches.filter((m) => !removedMatchIds.includes(m.id));
+      const predictions = state.predictions.filter((p) => !removedMatchIds.includes(p.matchId));
+      return { ...state, teams, players, matches, predictions };
     }
+
+    case "ADMIN_RESET_TOURNAMENT_DATA":
+      return {
+        ...state,
+        teams: [],
+        players: [],
+        matches: [],
+        predictions: [],
+        dream4Picks: [],
+        tablePredictions: [],
+      };
 
     case "ADMIN_SIMULATE_ROUND": {
       const matches: Match[] = state.matches.map((m) => {
@@ -302,6 +319,7 @@ interface AppContextValue {
     players: { id: string; name: string }[]
   ) => void;
   adminDeleteTeam: (teamId: string) => Promise<{ ok: boolean; reason?: string }>;
+  adminResetTournamentData: () => void;
   resetAll: () => void;
   refetchAll: () => void;
 }
@@ -652,16 +670,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const adminDeleteTeam = useCallback(
     async (teamId: string) => {
-      const hasMatches = state.matches.some((m) => m.teamAId === teamId || m.teamBId === teamId);
-      if (hasMatches) {
-        return { ok: false, reason: "לא ניתן למחוק קבוצה עם משחקים משובצים בלוח" };
-      }
-
+      // Deleting a team also removes its scheduled/played matches (and any
+      // predictions on them) rather than blocking — useful when rebuilding a
+      // tournament's teams from scratch.
       if (dataSource === "supabase") {
         try {
           await repo.deleteTeam(teamId);
-          const { teams, players } = await repo.fetchTeamsAndPlayers();
-          setSupaState((prev) => (prev ? { ...prev, teams, players } : prev));
+          const [{ teams, players }, matches] = await Promise.all([
+            repo.fetchTeamsAndPlayers(),
+            repo.fetchMatches(),
+          ]);
+          setSupaState((prev) => (prev ? { ...prev, teams, players, matches } : prev));
           return { ok: true };
         } catch (err) {
           console.error("[futevolei] Failed to delete team", err);
@@ -672,8 +691,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       dispatch({ type: "ADMIN_DELETE_TEAM", teamId });
       return { ok: true };
     },
-    [dataSource, state.matches]
+    [dataSource]
   );
+
+  const adminResetTournamentData = useCallback(() => {
+    if (dataSource === "supabase") {
+      repo
+        .resetTournamentData()
+        .then(() => repo.fetchAppState(state.currentUserId))
+        .then((fresh) => setSupaState(fresh))
+        .catch((err) => console.error("[futevolei] Failed to reset tournament data", err));
+      return;
+    }
+    dispatch({ type: "ADMIN_RESET_TOURNAMENT_DATA" });
+  }, [dataSource, state.currentUserId]);
 
   const resetAll = useCallback(() => {
     // No destructive "factory reset" against a shared production database —
@@ -715,6 +746,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     adminCreateMatch,
     adminUpdateTeam,
     adminDeleteTeam,
+    adminResetTournamentData,
     resetAll,
     refetchAll,
   };
