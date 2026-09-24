@@ -2,12 +2,12 @@
 
 import { ListOrdered } from "lucide-react";
 import { useApp } from "@/context/AppContext";
-import { isSeasonLocked } from "@/lib/scoring";
+import { isTablePredictionsLocked } from "@/lib/scoring";
 
 export function SeasonBanner({ onOpenTab }: { onOpenTab: () => void }) {
   const { state, currentUser } = useApp();
 
-  if (isSeasonLocked(state)) return null;
+  if (isTablePredictionsLocked(state)) return null;
   const hasPrediction = state.tablePredictions.some((p) => p.userId === currentUser.id);
   if (hasPrediction) return null;
 

@@ -316,3 +316,33 @@ export function isSeasonLocked(state: AppState): boolean {
   if (round1Matches.length === 0) return false;
   return round1Matches.some((m) => isMatchLocked(m));
 }
+
+export function getRoundConfig(state: AppState, round: number) {
+  return state.roundConfigs.find((r) => r.round === round);
+}
+
+function isPast(iso: string | undefined): boolean {
+  return !!iso && Date.now() >= new Date(iso).getTime();
+}
+
+/** A match's predictions lock once its round's admin-set deadline passes
+ * (falling back to the match's own status/start time if no deadline is set). */
+export function isPredictionsLocked(match: Match, state: AppState): boolean {
+  if (match.status !== "upcoming") return true;
+  if (isPast(getRoundConfig(state, match.round)?.predictionsDeadline)) return true;
+  return isMatchLocked(match);
+}
+
+/** A round's Dream4 picks lock once its admin-set fantasy deadline passes
+ * (falling back to any of the round's matches locking). */
+export function isFantasyRoundLocked(round: number, state: AppState): boolean {
+  if (isPast(getRoundConfig(state, round)?.fantasyDeadline)) return true;
+  return state.matches.filter((m) => m.round === round).some((m) => isMatchLocked(m));
+}
+
+/** Season table predictions lock once the admin-set global deadline passes
+ * (falling back to round 1 starting, as before). */
+export function isTablePredictionsLocked(state: AppState): boolean {
+  if (isPast(state.seasonTableDeadline)) return true;
+  return isSeasonLocked(state);
+}

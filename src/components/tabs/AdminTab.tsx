@@ -1,11 +1,23 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Dice5, RefreshCw, RotateCcw, ShieldAlert, Trash2 } from "lucide-react";
+import { CalendarClock, Dice5, RefreshCw, RotateCcw, ShieldAlert, Trash2, Trophy, Users2 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import type { Match, SetScore } from "@/lib/types";
 import { REGULAR_SEASON_ROUNDS } from "@/lib/types";
 import { Badge, Card, GhostButton, NumberInput, PrimaryButton, SectionTitle } from "../ui";
+import { RoundConfigSection } from "../admin/RoundConfigSection";
+import { TeamCreationSection } from "../admin/TeamCreationSection";
+import { MatchSchedulingSection } from "../admin/MatchSchedulingSection";
+
+type AdminView = "results" | "deadlines" | "teams" | "scheduling";
+
+const ADMIN_VIEWS: { id: AdminView; label: string; icon: typeof ShieldAlert }[] = [
+  { id: "results", label: "תוצאות משחקים", icon: ShieldAlert },
+  { id: "deadlines", label: "מחזורים ודדליינים", icon: CalendarClock },
+  { id: "teams", label: "קבוצות ושחקנים", icon: Users2 },
+  { id: "scheduling", label: "לוח משחקים", icon: Trophy },
+];
 
 function AdminMatchForm({ match }: { match: Match }) {
   const { state, adminSetResult, adminResetResult } = useApp();
@@ -76,6 +88,7 @@ export function AdminTab() {
   );
   const [activeRound, setActiveRound] = useState(rounds[0]);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [view, setView] = useState<AdminView>("results");
 
   const matches = state.matches.filter((m) => m.round === activeRound);
 
@@ -96,6 +109,28 @@ export function AdminTab() {
         icon={<ShieldAlert size={20} />}
       />
 
+      <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
+        {ADMIN_VIEWS.map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            onClick={() => setView(id)}
+            className={`flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-sm font-bold transition ${
+              view === id
+                ? "bg-gradient-to-l from-ocean to-ocean-light text-slate-900"
+                : "bg-slate-800/60 text-slate-300 hover:bg-slate-800"
+            }`}
+          >
+            <Icon size={14} /> {label}
+          </button>
+        ))}
+      </div>
+
+      {view === "deadlines" && <RoundConfigSection />}
+      {view === "teams" && <TeamCreationSection />}
+      {view === "scheduling" && <MatchSchedulingSection />}
+
+      {view === "results" && (
+        <>
       <div className="mb-4 flex flex-wrap items-center gap-2">
         {rounds.map((r) => (
           <button
@@ -164,6 +199,8 @@ export function AdminTab() {
             </GhostButton>
           )}
         </Card>
+      )}
+        </>
       )}
     </div>
   );

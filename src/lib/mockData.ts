@@ -6,11 +6,13 @@ import type {
   MatchResult,
   Player,
   Prediction,
+  RoundConfig,
   SetScore,
   TablePrediction,
   Team,
   User,
 } from "./types";
+import { REGULAR_SEASON_ROUNDS } from "./types";
 import { generateRoundRobin } from "./roundRobin";
 
 const HOUR = 60 * 60 * 1000;
@@ -32,51 +34,51 @@ export const TEAMS: Team[] = [
 ];
 
 export const PLAYERS: Player[] = [
-  { id: "t1p1", name: "דורון דיאמנט", teamId: "t1", position: "חובט", number: 1 },
-  { id: "t1p2", name: "יובל כץ", teamId: "t1", position: "מגן", number: 2 },
-  { id: "t1p3", name: "ביאל", teamId: "t1", position: "חובט", number: 3 },
+  { id: "t1p1", name: "דורון דיאמנט", teamId: "t1", number: 1 },
+  { id: "t1p2", name: "יובל כץ", teamId: "t1", number: 2 },
+  { id: "t1p3", name: "ביאל", teamId: "t1", number: 3 },
 
-  { id: "t2p1", name: "לי ליברמן", teamId: "t2", position: "חובט", number: 1 },
-  { id: "t2p2", name: "לירון רומי", teamId: "t2", position: "מגן", number: 2 },
-  { id: "t2p3", name: "פרנקלין", teamId: "t2", position: "חובט", number: 3 },
+  { id: "t2p1", name: "לי ליברמן", teamId: "t2", number: 1 },
+  { id: "t2p2", name: "לירון רומי", teamId: "t2", number: 2 },
+  { id: "t2p3", name: "פרנקלין", teamId: "t2", number: 3 },
 
-  { id: "t3p1", name: "רון בן ישי", teamId: "t3", position: "חובט", number: 1 },
-  { id: "t3p2", name: "מאור האס", teamId: "t3", position: "מגן", number: 2 },
+  { id: "t3p1", name: "רון בן ישי", teamId: "t3", number: 1 },
+  { id: "t3p2", name: "מאור האס", teamId: "t3", number: 2 },
 
-  { id: "t4p1", name: "אורי גלבוע", teamId: "t4", position: "חובט", number: 1 },
-  { id: "t4p2", name: "ויקטור ריאל", teamId: "t4", position: "מגן", number: 2 },
+  { id: "t4p1", name: "אורי גלבוע", teamId: "t4", number: 1 },
+  { id: "t4p2", name: "ויקטור ריאל", teamId: "t4", number: 2 },
 
-  { id: "t5p1", name: "יוסי דרעי", teamId: "t5", position: "חובט", number: 1 },
-  { id: "t5p2", name: "דן לוין", teamId: "t5", position: "מגן", number: 2 },
-  { id: "t5p3", name: "נם", teamId: "t5", position: "חובט", number: 3 },
+  { id: "t5p1", name: "יוסי דרעי", teamId: "t5", number: 1 },
+  { id: "t5p2", name: "דן לוין", teamId: "t5", number: 2 },
+  { id: "t5p3", name: "נם", teamId: "t5", number: 3 },
 
-  { id: "t6p1", name: "אדיב שביט", teamId: "t6", position: "חובט", number: 1 },
-  { id: "t6p2", name: "עידו שימלמיץ", teamId: "t6", position: "מגן", number: 2 },
-  { id: "t6p3", name: "נגביניה", teamId: "t6", position: "חובט", number: 3 },
+  { id: "t6p1", name: "אדיב שביט", teamId: "t6", number: 1 },
+  { id: "t6p2", name: "עידו שימלמיץ", teamId: "t6", number: 2 },
+  { id: "t6p3", name: "נגביניה", teamId: "t6", number: 3 },
 
-  { id: "t7p1", name: "אורן צוברי", teamId: "t7", position: "חובט", number: 1 },
-  { id: "t7p2", name: "ויטיניו", teamId: "t7", position: "מגן", number: 2 },
-  { id: "t7p3", name: "שמואל עזזרי", teamId: "t7", position: "חובט", number: 3 },
+  { id: "t7p1", name: "אורן צוברי", teamId: "t7", number: 1 },
+  { id: "t7p2", name: "ויטיניו", teamId: "t7", number: 2 },
+  { id: "t7p3", name: "שמואל עזזרי", teamId: "t7", number: 3 },
 
-  { id: "t8p1", name: "קאי חסון", teamId: "t8", position: "חובט", number: 1 },
-  { id: "t8p2", name: "אופק גולדברג", teamId: "t8", position: "מגן", number: 2 },
-  { id: "t8p3", name: "יובל ספיר", teamId: "t8", position: "חובט", number: 3 },
+  { id: "t8p1", name: "קאי חסון", teamId: "t8", number: 1 },
+  { id: "t8p2", name: "אופק גולדברג", teamId: "t8", number: 2 },
+  { id: "t8p3", name: "יובל ספיר", teamId: "t8", number: 3 },
 
-  { id: "t9p1", name: "מאור אנקונה", teamId: "t9", position: "חובט", number: 1 },
-  { id: "t9p2", name: "אלחנדרו ברלב", teamId: "t9", position: "מגן", number: 2 },
-  { id: "t9p3", name: "פאוליניו", teamId: "t9", position: "חובט", number: 3 },
+  { id: "t9p1", name: "מאור אנקונה", teamId: "t9", number: 1 },
+  { id: "t9p2", name: "אלחנדרו ברלב", teamId: "t9", number: 2 },
+  { id: "t9p3", name: "פאוליניו", teamId: "t9", number: 3 },
 
-  { id: "t10p1", name: "לידור פרנקו", teamId: "t10", position: "חובט", number: 1 },
-  { id: "t10p2", name: "הראל שועה", teamId: "t10", position: "מגן", number: 2 },
-  { id: "t10p3", name: "דאבי", teamId: "t10", position: "חובט", number: 3 },
+  { id: "t10p1", name: "לידור פרנקו", teamId: "t10", number: 1 },
+  { id: "t10p2", name: "הראל שועה", teamId: "t10", number: 2 },
+  { id: "t10p3", name: "דאבי", teamId: "t10", number: 3 },
 
-  { id: "t11p1", name: "דין שקד", teamId: "t11", position: "חובט", number: 1 },
-  { id: "t11p2", name: "רנאן", teamId: "t11", position: "מגן", number: 2 },
-  { id: "t11p3", name: "אראל חזיה", teamId: "t11", position: "חובט", number: 3 },
+  { id: "t11p1", name: "דין שקד", teamId: "t11", number: 1 },
+  { id: "t11p2", name: "רנאן", teamId: "t11", number: 2 },
+  { id: "t11p3", name: "אראל חזיה", teamId: "t11", number: 3 },
 
-  { id: "t12p1", name: "עידן דיין", teamId: "t12", position: "חובט", number: 1 },
-  { id: "t12p2", name: "פסקל שמידט", teamId: "t12", position: "מגן", number: 2 },
-  { id: "t12p3", name: "פטריקו", teamId: "t12", position: "חובט", number: 3 },
+  { id: "t12p1", name: "עידן דיין", teamId: "t12", number: 1 },
+  { id: "t12p2", name: "פסקל שמידט", teamId: "t12", number: 2 },
+  { id: "t12p3", name: "פטריקו", teamId: "t12", number: 3 },
 ];
 
 export const USERS: User[] = [
@@ -129,6 +131,28 @@ export function buildMatches(): Match[] {
 
   return matches;
 }
+
+/** Default round dates/deadlines, derived from the same schedule as buildMatches()
+ * so a fresh install's countdowns/locks line up until an admin overrides them. */
+export function buildRoundConfigs(): RoundConfig[] {
+  const now = Date.now();
+  return Array.from({ length: REGULAR_SEASON_ROUNDS }, (_, i) => {
+    const round = i + 1;
+    let date: number;
+    if (round === 1) date = now - 10 * DAY;
+    else if (round === 2) date = now + 4 * HOUR;
+    else date = now + (round - 3) * 7 * DAY;
+
+    return {
+      round,
+      date: new Date(date).toISOString(),
+      predictionsDeadline: new Date(date).toISOString(),
+      fantasyDeadline: new Date(date).toISOString(),
+    };
+  });
+}
+
+export const SEASON_TABLE_DEADLINE = new Date(Date.now() - 10 * DAY).toISOString();
 
 export const PREDICTIONS: Prediction[] = [
   // me
@@ -224,5 +248,7 @@ export function buildInitialState(): AppState {
     dream4Picks: DREAM4_PICKS,
     tablePredictions: TABLE_PREDICTIONS,
     leagues: LEAGUES,
+    roundConfigs: buildRoundConfigs(),
+    seasonTableDeadline: SEASON_TABLE_DEADLINE,
   };
 }

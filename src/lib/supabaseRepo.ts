@@ -9,6 +9,7 @@ import type {
   MatchStatus,
   Player,
   Prediction,
+  RoundConfig,
   SetScore,
   TablePrediction,
   Team,
@@ -174,6 +175,8 @@ export async function fetchAppState(currentUserId: string): Promise<AppState> {
     client.from("season_table_predictions").select("*"),
     client.from("private_leagues").select("*"),
     client.from("league_memberships").select("*"),
+    client.from("round_config").select("*").order("round_number"),
+    client.from("season_settings").select("*").eq("id", true).maybeSingle(),
   ] as const);
 
   const labels = [
@@ -186,6 +189,8 @@ export async function fetchAppState(currentUserId: string): Promise<AppState> {
     "season_table_predictions select",
     "private_leagues select",
     "league_memberships select",
+    "round_config select",
+    "season_settings select",
   ];
 
   results.forEach((r, i) => {
@@ -204,6 +209,8 @@ export async function fetchAppState(currentUserId: string): Promise<AppState> {
     { data: tableRows },
     { data: leagueRows },
     { data: membershipRows },
+    { data: roundConfigRows },
+    { data: seasonSettingsRow },
   ] = results;
 
   const users: User[] = (profileRows ?? []).map((p) => ({
@@ -225,7 +232,6 @@ export async function fetchAppState(currentUserId: string): Promise<AppState> {
     id: p.id,
     name: p.name,
     teamId: p.team_id,
-    position: p.position === "מגן" ? "מגן" : "חובט",
     number: p.jersey_number ?? 0,
   }));
 
@@ -264,6 +270,15 @@ export async function fetchAppState(currentUserId: string): Promise<AppState> {
     createdAt: l.created_at,
   }));
 
+  const roundConfigs: RoundConfig[] = (roundConfigRows ?? []).map((r) => ({
+    round: r.round_number,
+    date: r.round_date,
+    predictionsDeadline: r.predictions_deadline,
+    fantasyDeadline: r.fantasy_deadline,
+  }));
+
+  const seasonTableDeadline = seasonSettingsRow?.table_predictions_deadline ?? "";
+
   return {
     currentUserId,
     users,
@@ -274,6 +289,8 @@ export async function fetchAppState(currentUserId: string): Promise<AppState> {
     dream4Picks,
     tablePredictions,
     leagues,
+    roundConfigs,
+    seasonTableDeadline,
   };
 }
 
@@ -402,4 +419,99 @@ export async function adminSimulateRound(round: number): Promise<void> {
   const client = requireClient();
   const { error } = await client.rpc("admin_simulate_round", { p_round: round });
   if (error) throw logAndReturn("admin_simulate_round rpc", error);
+}
+
+export async function fetchRoundConfigs(): Promise<RoundConfig[]> {
+  const client = requireClient();
+  const { data, error } = await client.from("round_config").select("*").order("round_number");
+  if (error) throw logAndReturn("round_config select (fetchRoundConfigs)", error);
+  return (data ?? []).map((r) => ({
+    round: r.round_number,
+    date: r.round_date,
+    predictionsDeadline: r.predictions_deadline,
+    fantasyDeadline: r.fantasy_deadline,
+  }));
+}
+
+export async function updateRoundConfig(config: RoundConfig): Promise<void> {
+  const client = requireClient();
+  const { error } = await client.from("round_config").upsert(
+    {
+      round_number: config.round,
+      round_date: config.date,
+      predictions_deadline: config.predictionsDeadline,
+      fantasy_deadline: config.fantasyDeadline,
+    },
+    { onConflict: "round_number" }
+  );
+  if (error) throw logAndReturn("round_config upsert (updateRoundConfig)", error);
+}
+
+export async function updateSeasonTableDeadline(deadline: string): Promise<void> {
+  const client = requireClient();
+  const { error } = await client
+    .from("season_settings")
+    .upsert({ id: true, table_predictions_deadline: deadline }, { onConflict: "id" });
+  if (error) throw logAndReturn("season_settings upsert (updateSeasonTableDeadline)", error);
+}
+
+export async function createTeam(
+  name: string,
+  color: string,
+  emoji: string,
+  playerNames: [string, string, string]
+): Promise<void> {
+  const client = requireClient();
+  const { data: team, error: teamError } = await client
+    .from("teams")
+    .insert({ name, short_name: name.slice(0, 10), color, emoji })
+    .select()
+    .single();
+  if (teamError) throw logAndReturn("teams insert (createTeam)", teamError);
+
+  const { error: playersError } = await client.from("players").insert(
+    playerNames.map((playerName, i) => ({
+      team_id: team.id,
+      name: playerName,
+      jersey_number: i + 1,
+    }))
+  );
+  if (playersError) throw logAndReturn("players insert (createTeam)", playersError);
+}
+
+export async function createMatch(round: number, teamAId: string, teamBId: string): Promise<void> {
+  const client = requireClient();
+  const { error } = await client.from("matches").insert({
+    round_number: round,
+    team_a_id: teamAId,
+    team_b_id: teamBId,
+    status: "scheduled",
+  });
+  if (error) throw logAndReturn("matches insert (createMatch)", error);
+}
+
+export async function fetchTeamsAndPlayers(): Promise<{ teams: Team[]; players: Player[] }> {
+  const client = requireClient();
+  const [{ data: teamRows, error: teamErr }, { data: playerRows, error: playerErr }] =
+    await Promise.all([
+      client.from("teams").select("*").order("name"),
+      client.from("players").select("*").order("name"),
+    ]);
+  if (teamErr) throw logAndReturn("teams select (fetchTeamsAndPlayers)", teamErr);
+  if (playerErr) throw logAndReturn("players select (fetchTeamsAndPlayers)", playerErr);
+
+  const teams: Team[] = (teamRows ?? []).map((t) => ({
+    id: t.id,
+    name: t.name,
+    shortName: t.short_name,
+    color: t.color,
+    emoji: t.emoji ?? "🏐",
+  }));
+  const players: Player[] = (playerRows ?? []).map((p) => ({
+    id: p.id,
+    name: p.name,
+    teamId: p.team_id,
+    number: p.jersey_number ?? 0,
+  }));
+  return { teams, players };
 }

@@ -15,7 +15,7 @@ import { useApp } from "@/context/AppContext";
 import {
   computeStandings,
   computeTablePredictionScore,
-  isSeasonLocked,
+  isTablePredictionsLocked,
 } from "@/lib/scoring";
 import type { PlayoffZone } from "@/lib/types";
 import { Badge, Card, PrimaryButton, SectionTitle } from "../ui";
@@ -91,7 +91,7 @@ function LiveStandings() {
 
 function TablePredictionEditor() {
   const { state, currentUser, submitTablePrediction } = useApp();
-  const locked = isSeasonLocked(state);
+  const locked = isTablePredictionsLocked(state);
   const existing = state.tablePredictions.find((p) => p.userId === currentUser.id);
 
   const [order, setOrder] = useState<string[]>(

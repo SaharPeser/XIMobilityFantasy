@@ -112,7 +112,6 @@ create table public.players (
   id uuid primary key default gen_random_uuid(),
   team_id uuid not null references public.teams (id) on delete cascade,
   name text not null,
-  position text,
   jersey_number int
 );
 
@@ -143,6 +142,26 @@ create table public.matches (
 
 create index matches_round_idx on public.matches (round_number);
 
+-- =========================================================================
+-- round_config & season_settings (admin-set dates/deadlines)
+-- =========================================================================
+
+create table public.round_config (
+  round_number int primary key check (round_number between 1 and 11),
+  round_date timestamptz not null,
+  predictions_deadline timestamptz not null,
+  fantasy_deadline timestamptz not null
+);
+
+-- Singleton row (id is always true) holding the one global deadline that
+-- isn't per-round: when season table predictions lock.
+create table public.season_settings (
+  id boolean primary key default true check (id),
+  table_predictions_deadline timestamptz not null
+);
+
+-- A round locks for fantasy picks once any of its matches is no longer
+-- 'scheduled', OR once the admin's fantasy_deadline for that round passes.
 create or replace function public.is_round_locked(p_round int)
 returns boolean
 language sql
@@ -150,17 +169,26 @@ stable
 as $$
   select exists (
     select 1 from public.matches
-    where round_number = p_round
-      and status <> 'scheduled'
+    where round_number = p_round and status <> 'scheduled'
+  )
+  or exists (
+    select 1 from public.round_config
+    where round_number = p_round and now() >= fantasy_deadline
   );
 $$;
 
+-- Season table predictions lock once the admin's global deadline passes
+-- (falling back to round 1 being locked, if no deadline has been set yet).
 create or replace function public.is_season_locked()
 returns boolean
 language sql
 stable
 as $$
-  select public.is_round_locked(1);
+  select public.is_round_locked(1)
+    or exists (
+      select 1 from public.season_settings
+      where now() >= table_predictions_deadline
+    );
 $$;
 
 -- =========================================================================
@@ -588,6 +616,8 @@ alter table public.fantasy_picks enable row level security;
 alter table public.season_table_predictions enable row level security;
 alter table public.private_leagues enable row level security;
 alter table public.league_memberships enable row level security;
+alter table public.round_config enable row level security;
+alter table public.season_settings enable row level security;
 
 -- profiles: everyone signed in can read the roster (names/avatars for
 -- leaderboards); a user can only edit their own row, and never their role.
@@ -613,6 +643,16 @@ create policy "matches_select_all" on public.matches for select to authenticated
 create policy "matches_admin_write" on public.matches for all to authenticated
   using (public.is_admin()) with check (public.is_admin());
 
+-- round_config / season_settings: public read (drives client-side lock
+-- countdowns for everyone), admin-only write.
+create policy "round_config_select_all" on public.round_config for select to authenticated using (true);
+create policy "round_config_admin_write" on public.round_config for all to authenticated
+  using (public.is_admin()) with check (public.is_admin());
+
+create policy "season_settings_select_all" on public.season_settings for select to authenticated using (true);
+create policy "season_settings_admin_write" on public.season_settings for all to authenticated
+  using (public.is_admin()) with check (public.is_admin());
+
 -- match_predictions: visible to their owner always, to everyone else only
 -- once the match is finished (keeps picks private pre-kickoff). Writable by
 -- the owner only while the match is still 'scheduled' (no separate time-based
@@ -630,7 +670,12 @@ create policy "match_predictions_insert" on public.match_predictions
     auth.uid() = user_id
     and exists (
       select 1 from public.matches m
-      where m.id = match_id and m.status = 'scheduled'
+      where m.id = match_id
+        and m.status = 'scheduled'
+        and not exists (
+          select 1 from public.round_config rc
+          where rc.round_number = m.round_number and now() >= rc.predictions_deadline
+        )
     )
   );
 
@@ -641,7 +686,12 @@ create policy "match_predictions_update" on public.match_predictions
     auth.uid() = user_id
     and exists (
       select 1 from public.matches m
-      where m.id = match_id and m.status = 'scheduled'
+      where m.id = match_id
+        and m.status = 'scheduled'
+        and not exists (
+          select 1 from public.round_config rc
+          where rc.round_number = m.round_number and now() >= rc.predictions_deadline
+        )
     )
   );
 

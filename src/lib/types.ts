@@ -6,13 +6,10 @@ export interface Team {
   emoji: string;
 }
 
-export type PlayerPosition = "חובט" | "מגן";
-
 export interface Player {
   id: string;
   name: string;
   teamId: string;
-  position: PlayerPosition;
   number: number;
 }
 
@@ -62,6 +59,14 @@ export interface TablePrediction {
   order: string[]; // team ids, index 0 = predicted 1st place ... index 11 = predicted 12th place
 }
 
+/** Admin-configured dates/deadlines for one round. All fields are ISO strings. */
+export interface RoundConfig {
+  round: number;
+  date: string;
+  predictionsDeadline: string;
+  fantasyDeadline: string;
+}
+
 export interface League {
   id: string;
   name: string;
@@ -88,6 +93,9 @@ export interface AppState {
   dream4Picks: Dream4Pick[];
   tablePredictions: TablePrediction[];
   leagues: League[];
+  roundConfigs: RoundConfig[];
+  /** ISO string; season table predictions lock once this passes. */
+  seasonTableDeadline: string;
 }
 
 export const REGULAR_SEASON_ROUNDS = 11;

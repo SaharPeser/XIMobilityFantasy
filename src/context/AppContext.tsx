@@ -16,6 +16,7 @@ import type {
   Match,
   MatchResult,
   Prediction,
+  RoundConfig,
   SetScore,
   TablePrediction,
 } from "@/lib/types";
@@ -25,7 +26,7 @@ import { isSupabaseConfigured } from "@/lib/supabaseClient";
 import * as repo from "@/lib/supabaseRepo";
 import { readCachedDisplayName, writeCachedDisplayName } from "@/lib/displayNameCache";
 
-const STORAGE_KEY = "futevolei-state-v2";
+const STORAGE_KEY = "futevolei-state-v3";
 
 export type DataSource = "mock" | "supabase";
 
@@ -51,6 +52,17 @@ type Action =
   | { type: "ADMIN_SET_RESULT"; matchId: string; result: MatchResult }
   | { type: "ADMIN_SIMULATE_ROUND"; round: number }
   | { type: "ADMIN_RESET_RESULT"; matchId: string }
+  | { type: "ADMIN_SET_ROUND_CONFIG"; config: RoundConfig }
+  | { type: "ADMIN_SET_SEASON_TABLE_DEADLINE"; deadline: string }
+  | {
+      type: "ADMIN_CREATE_TEAM";
+      teamId: string;
+      name: string;
+      color: string;
+      emoji: string;
+      playerNames: [string, string, string];
+    }
+  | { type: "ADMIN_CREATE_MATCH"; matchId: string; round: number; teamAId: string; teamBId: string }
   | { type: "RESET_ALL" };
 
 function simulateMatchResult(): MatchResult {
@@ -166,6 +178,40 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, matches };
     }
 
+    case "ADMIN_SET_ROUND_CONFIG": {
+      const exists = state.roundConfigs.some((r) => r.round === action.config.round);
+      const roundConfigs = exists
+        ? state.roundConfigs.map((r) => (r.round === action.config.round ? action.config : r))
+        : [...state.roundConfigs, action.config].sort((a, b) => a.round - b.round);
+      return { ...state, roundConfigs };
+    }
+
+    case "ADMIN_SET_SEASON_TABLE_DEADLINE":
+      return { ...state, seasonTableDeadline: action.deadline };
+
+    case "ADMIN_CREATE_TEAM": {
+      const team = { id: action.teamId, name: action.name, shortName: action.name.slice(0, 10), color: action.color, emoji: action.emoji };
+      const players = action.playerNames.map((name, i) => ({
+        id: `${action.teamId}p${i + 1}`,
+        name,
+        teamId: action.teamId,
+        number: i + 1,
+      }));
+      return { ...state, teams: [...state.teams, team], players: [...state.players, ...players] };
+    }
+
+    case "ADMIN_CREATE_MATCH": {
+      const match: Match = {
+        id: action.matchId,
+        round: action.round,
+        teamAId: action.teamAId,
+        teamBId: action.teamBId,
+        startTime: new Date().toISOString(),
+        status: "upcoming",
+      };
+      return { ...state, matches: [...state.matches, match] };
+    }
+
     case "ADMIN_SIMULATE_ROUND": {
       const matches: Match[] = state.matches.map((m) => {
         if (m.round !== action.round) return m;
@@ -211,6 +257,15 @@ interface AppContextValue {
   adminSetResult: (matchId: string, result: MatchResult) => void;
   adminResetResult: (matchId: string) => void;
   adminSimulateRound: (round: number) => void;
+  adminSetRoundConfig: (config: RoundConfig) => void;
+  adminSetSeasonTableDeadline: (deadline: string) => void;
+  adminCreateTeam: (
+    name: string,
+    color: string,
+    emoji: string,
+    playerNames: [string, string, string]
+  ) => void;
+  adminCreateMatch: (round: number, teamAId: string, teamBId: string) => void;
   resetAll: () => void;
   refetchAll: () => void;
 }
@@ -482,6 +537,62 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [dataSource]
   );
 
+  const adminSetRoundConfig = useCallback(
+    (config: RoundConfig) => {
+      applyLocally({ type: "ADMIN_SET_ROUND_CONFIG", config });
+      if (dataSource === "supabase") {
+        repo.updateRoundConfig(config).catch((err) => {
+          console.error("[futevolei] Failed to save round deadlines", err);
+        });
+      }
+    },
+    [applyLocally, dataSource]
+  );
+
+  const adminSetSeasonTableDeadline = useCallback(
+    (deadline: string) => {
+      applyLocally({ type: "ADMIN_SET_SEASON_TABLE_DEADLINE", deadline });
+      if (dataSource === "supabase") {
+        repo.updateSeasonTableDeadline(deadline).catch((err) => {
+          console.error("[futevolei] Failed to save season table deadline", err);
+        });
+      }
+    },
+    [applyLocally, dataSource]
+  );
+
+  const adminCreateTeam = useCallback(
+    (name: string, color: string, emoji: string, playerNames: [string, string, string]) => {
+      if (dataSource === "supabase") {
+        repo
+          .createTeam(name, color, emoji, playerNames)
+          .then(() => repo.fetchTeamsAndPlayers())
+          .then(({ teams, players }) => setSupaState((prev) => (prev ? { ...prev, teams, players } : prev)))
+          .catch((err) => console.error("[futevolei] Failed to create team", err));
+        return;
+      }
+      const teamId = `team-${Date.now()}`;
+      dispatch({ type: "ADMIN_CREATE_TEAM", teamId, name, color, emoji, playerNames });
+    },
+    [dataSource]
+  );
+
+  const adminCreateMatch = useCallback(
+    (round: number, teamAId: string, teamBId: string) => {
+      if (dataSource === "supabase") {
+        repo
+          .createMatch(round, teamAId, teamBId)
+          .then(() => repo.fetchMatches())
+          .then((matches) => setSupaState((prev) => (prev ? { ...prev, matches } : prev)))
+          .catch((err) => console.error("[futevolei] Failed to create match", err));
+        return;
+      }
+      const matchId = `match-${Date.now()}`;
+      dispatch({ type: "ADMIN_CREATE_MATCH", matchId, round, teamAId, teamBId });
+    },
+    [dataSource]
+  );
+
   const resetAll = useCallback(() => {
     // No destructive "factory reset" against a shared production database —
     // this only ever clears the local mock sandbox.
@@ -516,6 +627,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     adminSetResult,
     adminResetResult,
     adminSimulateRound,
+    adminSetRoundConfig,
+    adminSetSeasonTableDeadline,
+    adminCreateTeam,
+    adminCreateMatch,
     resetAll,
     refetchAll,
   };

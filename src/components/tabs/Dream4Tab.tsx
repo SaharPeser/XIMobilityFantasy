@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { Star, Users2 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
-import { computeDream4PickPoints, computePlayerRoundPoints, isMatchLocked } from "@/lib/scoring";
+import { computeDream4PickPoints, computePlayerRoundPoints, isFantasyRoundLocked } from "@/lib/scoring";
 import type { Player } from "@/lib/types";
 import { Badge, Card, PrimaryButton, SectionTitle } from "../ui";
 
@@ -43,7 +43,6 @@ function PlayerPickCard({
         </div>
         <div className="flex-1">
           <p className="text-sm font-bold text-slate-50">{player.name}</p>
-          <p className="text-xs text-slate-500">{player.position}</p>
         </div>
         {typeof points === "number" && (
           <Badge tone={points > 0 ? "green" : "default"}>{points} נק&apos;</Badge>
@@ -70,7 +69,7 @@ function Dream4RoundBoard({ round }: { round: number }) {
   const { state, currentUser, submitDream4 } = useApp();
 
   const roundMatches = state.matches.filter((m) => m.round === round);
-  const roundLocked = roundMatches.some((m) => isMatchLocked(m));
+  const roundLocked = isFantasyRoundLocked(round, state);
   const roundFinished = roundMatches.length > 0 && roundMatches.every((m) => m.status === "finished");
 
   const existingPick = state.dream4Picks.find(

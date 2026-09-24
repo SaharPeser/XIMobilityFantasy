@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Lock, Trophy, CheckCircle2 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import type { Match, SetScore } from "@/lib/types";
-import { computePredictionScore, getMatchWinnerTeamId, isMatchLocked } from "@/lib/scoring";
+import { computePredictionScore, getMatchWinnerTeamId, getRoundConfig, isPredictionsLocked } from "@/lib/scoring";
 import { Badge, Card, NumberInput, PrimaryButton } from "./ui";
 import { CountdownTimer } from "./CountdownTimer";
 
@@ -49,7 +49,8 @@ export function MatchCard({ match }: { match: Match }) {
   );
 
   const [expired, setExpired] = useState(false);
-  const locked = isMatchLocked(match) || expired;
+  const locked = isPredictionsLocked(match, state) || expired;
+  const countdownTarget = getRoundConfig(state, match.round)?.predictionsDeadline ?? match.startTime;
 
   const [winner, setWinner] = useState<string | null>(myPrediction?.winnerTeamId ?? null);
   const [set, setSetScore] = useState<SetScore>(myPrediction?.set ?? { a: 18, b: 14 });
@@ -86,7 +87,7 @@ export function MatchCard({ match }: { match: Match }) {
           </Badge>
         ) : (
           <Badge tone="sand">
-            <CountdownTimer startTime={match.startTime} onExpire={() => setExpired(true)} />
+            <CountdownTimer startTime={countdownTarget} onExpire={() => setExpired(true)} />
           </Badge>
         )}
       </div>
