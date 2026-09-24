@@ -3,12 +3,12 @@
 import { useState } from "react";
 import { UserPlus } from "lucide-react";
 import { useApp } from "@/context/AppContext";
+import { LEAGUE_SIZE } from "@/lib/types";
 import { Card, PrimaryButton } from "../ui";
-
-const EMOJI_OPTIONS = ["🏐", "🦅", "🔥", "🏆", "🐙", "🌊", "🐝", "🕊️", "💎", "🇧🇷", "⚡", "🎨"];
+import { EMOJI_OPTIONS } from "./teamOptions";
 
 export function TeamCreationSection() {
-  const { adminCreateTeam } = useApp();
+  const { state, adminCreateTeam } = useApp();
   const [name, setName] = useState("");
   const [color, setColor] = useState("#F59E0B");
   const [emoji, setEmoji] = useState(EMOJI_OPTIONS[0]);
@@ -26,6 +26,14 @@ export function TeamCreationSection() {
     setName("");
     setPlayers(["", "", ""]);
   };
+
+  if (state.teams.length >= LEAGUE_SIZE) {
+    return (
+      <Card className="p-4 text-center text-sm text-slate-400">
+        הגעת למכסת {LEAGUE_SIZE} הקבוצות — מחק קבוצה קיימת כדי ליצור קבוצה חדשה
+      </Card>
+    );
+  }
 
   return (
     <Card className="p-4">

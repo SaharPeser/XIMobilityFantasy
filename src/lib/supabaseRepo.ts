@@ -479,6 +479,34 @@ export async function createTeam(
   if (playersError) throw logAndReturn("players insert (createTeam)", playersError);
 }
 
+export async function updateTeam(
+  teamId: string,
+  name: string,
+  color: string,
+  emoji: string,
+  players: { id: string; name: string }[]
+): Promise<void> {
+  const client = requireClient();
+  const { error: teamError } = await client
+    .from("teams")
+    .update({ name, short_name: name.slice(0, 10), color, emoji })
+    .eq("id", teamId);
+  if (teamError) throw logAndReturn("teams update (updateTeam)", teamError);
+
+  await Promise.all(
+    players.map(async (p) => {
+      const { error } = await client.from("players").update({ name: p.name }).eq("id", p.id);
+      if (error) throw logAndReturn("players update (updateTeam)", error);
+    })
+  );
+}
+
+export async function deleteTeam(teamId: string): Promise<void> {
+  const client = requireClient();
+  const { error } = await client.from("teams").delete().eq("id", teamId);
+  if (error) throw logAndReturn("teams delete (deleteTeam)", error);
+}
+
 export async function createMatch(round: number, teamAId: string, teamBId: string): Promise<void> {
   const client = requireClient();
   const { error } = await client.from("matches").insert({

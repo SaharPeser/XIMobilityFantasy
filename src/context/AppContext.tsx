@@ -63,6 +63,15 @@ type Action =
       playerNames: [string, string, string];
     }
   | { type: "ADMIN_CREATE_MATCH"; matchId: string; round: number; teamAId: string; teamBId: string }
+  | {
+      type: "ADMIN_UPDATE_TEAM";
+      teamId: string;
+      name: string;
+      color: string;
+      emoji: string;
+      players: { id: string; name: string }[];
+    }
+  | { type: "ADMIN_DELETE_TEAM"; teamId: string }
   | { type: "RESET_ALL" };
 
 function simulateMatchResult(): MatchResult {
@@ -212,6 +221,25 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, matches: [...state.matches, match] };
     }
 
+    case "ADMIN_UPDATE_TEAM": {
+      const teams = state.teams.map((t) =>
+        t.id === action.teamId
+          ? { ...t, name: action.name, shortName: action.name.slice(0, 10), color: action.color, emoji: action.emoji }
+          : t
+      );
+      const nameById = new Map(action.players.map((p) => [p.id, p.name]));
+      const players = state.players.map((p) =>
+        nameById.has(p.id) ? { ...p, name: nameById.get(p.id)! } : p
+      );
+      return { ...state, teams, players };
+    }
+
+    case "ADMIN_DELETE_TEAM": {
+      const teams = state.teams.filter((t) => t.id !== action.teamId);
+      const players = state.players.filter((p) => p.teamId !== action.teamId);
+      return { ...state, teams, players };
+    }
+
     case "ADMIN_SIMULATE_ROUND": {
       const matches: Match[] = state.matches.map((m) => {
         if (m.round !== action.round) return m;
@@ -266,6 +294,14 @@ interface AppContextValue {
     playerNames: [string, string, string]
   ) => void;
   adminCreateMatch: (round: number, teamAId: string, teamBId: string) => void;
+  adminUpdateTeam: (
+    teamId: string,
+    name: string,
+    color: string,
+    emoji: string,
+    players: { id: string; name: string }[]
+  ) => void;
+  adminDeleteTeam: (teamId: string) => Promise<{ ok: boolean; reason?: string }>;
   resetAll: () => void;
   refetchAll: () => void;
 }
@@ -593,6 +629,52 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [dataSource]
   );
 
+  const adminUpdateTeam = useCallback(
+    (
+      teamId: string,
+      name: string,
+      color: string,
+      emoji: string,
+      players: { id: string; name: string }[]
+    ) => {
+      if (dataSource === "supabase") {
+        repo
+          .updateTeam(teamId, name, color, emoji, players)
+          .then(() => repo.fetchTeamsAndPlayers())
+          .then(({ teams, players }) => setSupaState((prev) => (prev ? { ...prev, teams, players } : prev)))
+          .catch((err) => console.error("[futevolei] Failed to update team", err));
+        return;
+      }
+      dispatch({ type: "ADMIN_UPDATE_TEAM", teamId, name, color, emoji, players });
+    },
+    [dataSource]
+  );
+
+  const adminDeleteTeam = useCallback(
+    async (teamId: string) => {
+      const hasMatches = state.matches.some((m) => m.teamAId === teamId || m.teamBId === teamId);
+      if (hasMatches) {
+        return { ok: false, reason: "לא ניתן למחוק קבוצה עם משחקים משובצים בלוח" };
+      }
+
+      if (dataSource === "supabase") {
+        try {
+          await repo.deleteTeam(teamId);
+          const { teams, players } = await repo.fetchTeamsAndPlayers();
+          setSupaState((prev) => (prev ? { ...prev, teams, players } : prev));
+          return { ok: true };
+        } catch (err) {
+          console.error("[futevolei] Failed to delete team", err);
+          return { ok: false, reason: "שגיאה במחיקת הקבוצה" };
+        }
+      }
+
+      dispatch({ type: "ADMIN_DELETE_TEAM", teamId });
+      return { ok: true };
+    },
+    [dataSource, state.matches]
+  );
+
   const resetAll = useCallback(() => {
     // No destructive "factory reset" against a shared production database —
     // this only ever clears the local mock sandbox.
@@ -631,6 +713,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     adminSetSeasonTableDeadline,
     adminCreateTeam,
     adminCreateMatch,
+    adminUpdateTeam,
+    adminDeleteTeam,
     resetAll,
     refetchAll,
   };

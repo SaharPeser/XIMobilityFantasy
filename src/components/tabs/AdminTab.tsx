@@ -8,6 +8,7 @@ import { REGULAR_SEASON_ROUNDS } from "@/lib/types";
 import { Badge, Card, GhostButton, NumberInput, PrimaryButton, SectionTitle } from "../ui";
 import { RoundConfigSection } from "../admin/RoundConfigSection";
 import { TeamCreationSection } from "../admin/TeamCreationSection";
+import { TeamListSection } from "../admin/TeamListSection";
 import { MatchSchedulingSection } from "../admin/MatchSchedulingSection";
 
 type AdminView = "results" | "deadlines" | "teams" | "scheduling";
@@ -126,7 +127,12 @@ export function AdminTab() {
       </div>
 
       {view === "deadlines" && <RoundConfigSection />}
-      {view === "teams" && <TeamCreationSection />}
+      {view === "teams" && (
+        <>
+          <TeamListSection />
+          <TeamCreationSection />
+        </>
+      )}
       {view === "scheduling" && <MatchSchedulingSection />}
 
       {view === "results" && (
