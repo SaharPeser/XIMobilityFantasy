@@ -86,7 +86,7 @@ function mapMatchRow(m: {
   score_b: number | null;
   mvp_id: string | null;
   status: string;
-  lock_time: string;
+  created_at: string;
 }): Match {
   const result: MatchResult | undefined =
     m.score_a !== null && m.score_b !== null
@@ -97,7 +97,11 @@ function mapMatchRow(m: {
     round: m.round_number,
     teamAId: m.team_a_id,
     teamBId: m.team_b_id,
-    startTime: m.lock_time,
+    // No dedicated scheduling column on the live table — created_at is the
+    // best available timestamp for the client's own countdown/lock display.
+    // Real enforcement of the lock is server-side and status-based (see
+    // is_round_locked() and the match_predictions RLS policies in schema.sql).
+    startTime: m.created_at,
     status: mapDbStatus(m.status),
     result,
   };
@@ -164,7 +168,7 @@ export async function fetchAppState(currentUserId: string): Promise<AppState> {
     client.from("profiles").select("*"),
     client.from("teams").select("*").order("name"),
     client.from("players").select("*").order("name"),
-    client.from("matches").select("*").order("round_number").order("lock_time"),
+    client.from("matches").select("*").order("round_number").order("id"),
     client.from("match_predictions").select("*"),
     client.from("fantasy_picks").select("*"),
     client.from("season_table_predictions").select("*"),
@@ -279,7 +283,7 @@ export async function fetchMatches(): Promise<Match[]> {
     .from("matches")
     .select("*")
     .order("round_number")
-    .order("lock_time");
+    .order("id");
   if (error) throw logAndReturn("matches select (fetchMatches)", error);
   return (data ?? []).map(mapMatchRow);
 }

@@ -131,8 +131,11 @@ create table public.matches (
   score_a int check (score_a is null or score_a >= 0),
   score_b int check (score_b is null or score_b >= 0),
   mvp_id uuid references public.players (id),
+  -- Locking is purely status-based (no dedicated scheduling/lock_time
+  -- column): a match accepts predictions while 'scheduled' and is closed the
+  -- moment an admin marks it 'live' or 'finished'. created_at is what the
+  -- client uses for its own countdown/lock display (see supabaseRepo.ts).
   status text not null default 'scheduled' check (status in ('scheduled', 'live', 'finished')),
-  lock_time timestamptz not null,
   created_at timestamptz not null default now(),
   constraint matches_teams_distinct check (team_a_id <> team_b_id),
   constraint matches_round_pair_unique unique (round_number, team_a_id, team_b_id)
@@ -148,7 +151,7 @@ as $$
   select exists (
     select 1 from public.matches
     where round_number = p_round
-      and (status <> 'scheduled' or now() >= lock_time)
+      and status <> 'scheduled'
   );
 $$;
 
@@ -597,7 +600,7 @@ create policy "profiles_update_own" on public.profiles
 -- teams / players / matches: public read, admin-only write.
 -- Match *results* should go through admin_set_match_result() so dependent
 -- points recompute atomically; this policy still covers scheduling edits
--- (lock_time, status) and is a defense-in-depth backstop either way.
+-- (status) and is a defense-in-depth backstop either way.
 create policy "teams_select_all" on public.teams for select to authenticated using (true);
 create policy "teams_admin_write" on public.teams for all to authenticated
   using (public.is_admin()) with check (public.is_admin());
@@ -612,7 +615,8 @@ create policy "matches_admin_write" on public.matches for all to authenticated
 
 -- match_predictions: visible to their owner always, to everyone else only
 -- once the match is finished (keeps picks private pre-kickoff). Writable by
--- the owner only while the match is still scheduled and unlocked.
+-- the owner only while the match is still 'scheduled' (no separate time-based
+-- lock — see the comment on public.matches).
 create policy "match_predictions_select" on public.match_predictions
   for select to authenticated
   using (
@@ -626,7 +630,7 @@ create policy "match_predictions_insert" on public.match_predictions
     auth.uid() = user_id
     and exists (
       select 1 from public.matches m
-      where m.id = match_id and m.status = 'scheduled' and now() < m.lock_time
+      where m.id = match_id and m.status = 'scheduled'
     )
   );
 
@@ -637,7 +641,7 @@ create policy "match_predictions_update" on public.match_predictions
     auth.uid() = user_id
     and exists (
       select 1 from public.matches m
-      where m.id = match_id and m.status = 'scheduled' and now() < m.lock_time
+      where m.id = match_id and m.status = 'scheduled'
     )
   );
 
